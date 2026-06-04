@@ -160,23 +160,27 @@ class FolderOrganizerApp:
             height=18,
         )
 
-        self.preview_table.heading("approved", text="Approved")
+        self.preview_table.heading("approved", text="Action")
         self.preview_table.heading("file_name", text="File name")
         self.preview_table.heading("category", text="Category")
         self.preview_table.heading("confidence", text="Confidence")
         self.preview_table.heading("destination", text="Destination")
         self.preview_table.heading("reason", text="Reason")
 
-        self.preview_table.column("approved", width=90, anchor="center", stretch=False)
+        self.preview_table.column("approved", width=100, anchor="center", stretch=False)
         self.preview_table.column("file_name", width=230, anchor="w")
         self.preview_table.column("category", width=130, anchor="center", stretch=False)
         self.preview_table.column("confidence", width=110, anchor="center", stretch=False)
         self.preview_table.column("destination", width=260, anchor="w")
         self.preview_table.column("reason", width=330, anchor="w")
 
+        self.preview_table.bind("<Double-1>", self.toggle_selected_plan_approval)
+
         self.preview_table.tag_configure("high", background="#EAF7EA")
         self.preview_table.tag_configure("medium", background="#FFF7E6")
         self.preview_table.tag_configure("low", background="#FDECEC")
+        self.preview_table.tag_configure("not_approved", background="#F1F5F9")
+        self.preview_table.tag_configure("not_approved", background="#F1F5F9")
 
         vertical_scrollbar = ttk.Scrollbar(
             table_frame,
@@ -228,6 +232,14 @@ class FolderOrganizerApp:
         )
         undo_button.pack(side="right", padx=(0, 8))
 
+        self.toggle_approval_button = ttk.Button(
+            footer_frame,
+            text="☑/☐ Change selected",
+            command=self.toggle_selected_plan_approval,
+            state="disabled",
+        )
+        self.toggle_approval_button.pack(side="right", padx=(0, 8))
+
     def select_folder(self) -> None:
         folder = filedialog.askdirectory(title="Select a folder to organize")
 
@@ -260,26 +272,51 @@ class FolderOrganizerApp:
         self._populate_preview_table()
         self.status_var.set(f"Scan complete. {len(self.current_plans)} files found.")
 
+        if self.current_plans:
+            self.toggle_approval_button.configure(state="normal")
+
     def _populate_preview_table(self) -> None:
         for item in self.preview_table.get_children():
             self.preview_table.delete(item)
 
-        for plan in self.current_plans:
+        for index, plan in enumerate(self.current_plans):
             relative_destination = self._get_relative_destination(plan.target_path)
 
             self.preview_table.insert(
                 "",
                 "end",
+                iid=str(index),
                 values=(
-                    "✓ Yes" if plan.approved else "No",
+                    "☑ Move" if plan.approved else "☐ Skip",
                     plan.file_item.name,
                     plan.category,
                     plan.confidence,
                     relative_destination,
                     plan.reason,
                 ),
-                tags=(plan.confidence,),
+                tags=("not_approved",) if not plan.approved else (plan.confidence,),
             )
+
+    def toggle_selected_plan_approval(self, event=None) -> None:
+        selected_items = self.preview_table.selection()
+
+        if not selected_items:
+            messagebox.showinfo(
+                "No file selected",
+                "Please select a file from the preview table first.",
+            )
+            return
+
+        selected_item = selected_items[0]
+        plan_index = int(selected_item)
+
+        plan = self.current_plans[plan_index]
+        plan.approved = not plan.approved
+
+        self._populate_preview_table()
+
+        status = "approved" if plan.approved else "not approved"
+        self.status_var.set(f"{plan.file_item.name} marked as {status}.")
 
     def _get_relative_destination(self, target_path: Path) -> str:
         if self.selected_folder is None:
