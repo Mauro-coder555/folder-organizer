@@ -6,6 +6,8 @@ from app.core.planner import MovePlanner
 from app.core.scanner import FolderScanner
 from app.models.move_plan import MovePlan
 
+from app.core.organizer import FolderOrganizer
+
 
 class FolderOrganizerApp:
     def __init__(self, root: tk.Tk) -> None:
@@ -19,6 +21,7 @@ class FolderOrganizerApp:
 
         self.scanner = FolderScanner()
         self.planner = MovePlanner()
+        self.organizer = FolderOrganizer()
 
         self._configure_styles()
         self._build_layout()
@@ -218,12 +221,13 @@ class FolderOrganizerApp:
         )
         status_label.pack(side="left")
 
-        apply_button = ttk.Button(
+        self.apply_button = ttk.Button(
             footer_frame,
             text="Apply approved movements",
+            command=self.apply_approved_movements,
             state="disabled",
         )
-        apply_button.pack(side="right")
+        self.apply_button.pack(side="right")
 
         undo_button = ttk.Button(
             footer_frame,
@@ -274,6 +278,7 @@ class FolderOrganizerApp:
 
         if self.current_plans:
             self.toggle_approval_button.configure(state="normal")
+            self.apply_button.configure(state="normal")
 
     def _populate_preview_table(self) -> None:
         for item in self.preview_table.get_children():
@@ -326,7 +331,54 @@ class FolderOrganizerApp:
             return str(target_path.relative_to(self.selected_folder))
         except ValueError:
             return str(target_path)
+    def apply_approved_movements(self) -> None:
+        if self.selected_folder is None:
+            messagebox.showwarning(
+                "No folder selected",
+                "Please select a folder first.",
+            )
+            return
 
+        approved_count = sum(1 for plan in self.current_plans if plan.approved)
+
+        if approved_count == 0:
+            messagebox.showinfo(
+                "No files approved",
+                "There are no files marked as ☑ Move.",
+            )
+            return
+
+        confirmed = messagebox.askyesno(
+            "Confirm organization",
+            f"{approved_count} files will be moved. Do you want to continue?",
+        )
+
+        if not confirmed:
+            return
+
+        try:
+            operation_log = self.organizer.apply(
+                self.selected_folder,
+                self.current_plans,
+            )
+        except Exception as error:
+            messagebox.showerror("Organization error", str(error))
+            return
+
+        moved_count = len(operation_log.movements)
+
+        messagebox.showinfo(
+            "Organization complete",
+            f"{moved_count} files were moved successfully.",
+        )
+
+        self.status_var.set(f"Organization complete. {moved_count} files moved.")
+        self.apply_button.configure(state="disabled")
+        self.toggle_approval_button.configure(state="disabled")
+
+        files = self.scanner.scan(self.selected_folder)
+        self.current_plans = self.planner.create_plan(self.selected_folder, files)
+        self._populate_preview_table()
 
 def run_app() -> None:
     root = tk.Tk()

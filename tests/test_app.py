@@ -6,6 +6,9 @@ from app.core.classifier import FileClassifier
 from app.core.planner import MovePlanner
 from app.core.scanner import FolderScanner
 
+from app.core.organizer import FolderOrganizer
+from app.storage.log_repository import LogRepository
+
 
 class TestFolderScanner(unittest.TestCase):
     def test_scan_returns_files_from_folder(self):
@@ -142,6 +145,74 @@ class TestMovePlanner(unittest.TestCase):
 
             self.assertTrue(invoice_file.exists())
             self.assertFalse((folder / "invoices" / "invoice_january.pdf").exists())
+
+class TestFolderOrganizer(unittest.TestCase):
+    def test_apply_moves_only_approved_files_and_saves_log(self):
+        with tempfile.TemporaryDirectory() as temporary_folder:
+            folder = Path(temporary_folder)
+            logs_folder = folder / "logs"
+
+            invoice_file = folder / "invoice_january.pdf"
+            notes_file = folder / "notes.txt"
+
+            invoice_file.write_text("Fake invoice content", encoding="utf-8")
+            notes_file.write_text("Some notes", encoding="utf-8")
+
+            files = FolderScanner().scan(folder)
+            plans = MovePlanner().create_plan(folder, files)
+
+            for plan in plans:
+                if plan.file_item.name == "notes.txt":
+                    plan.approved = False
+
+            log_repository = LogRepository(logs_folder=logs_folder)
+            organizer = FolderOrganizer(log_repository=log_repository)
+
+            operation_log = organizer.apply(folder, plans)
+
+            moved_invoice = folder / "invoices" / "invoice_january.pdf"
+            skipped_notes = folder / "notes.txt"
+
+            self.assertTrue(moved_invoice.exists())
+            self.assertFalse(invoice_file.exists())
+            self.assertTrue(skipped_notes.exists())
+
+            self.assertEqual(len(operation_log.movements), 1)
+            self.assertEqual(operation_log.movements[0].file_name, "invoice_january.pdf")
+
+            saved_logs = list(logs_folder.glob("*.json"))
+            self.assertEqual(len(saved_logs), 1)
+
+    def test_apply_does_not_overwrite_existing_files(self):
+        with tempfile.TemporaryDirectory() as temporary_folder:
+            folder = Path(temporary_folder)
+            logs_folder = folder / "logs"
+
+            source_invoice = folder / "invoice_january.pdf"
+            target_folder = folder / "invoices"
+            existing_invoice = target_folder / "invoice_january.pdf"
+
+            source_invoice.write_text("New invoice", encoding="utf-8")
+            target_folder.mkdir()
+            existing_invoice.write_text("Existing invoice", encoding="utf-8")
+
+            files = FolderScanner().scan(folder)
+            plans = MovePlanner().create_plan(folder, files)
+
+            log_repository = LogRepository(logs_folder=logs_folder)
+            organizer = FolderOrganizer(log_repository=log_repository)
+
+            operation_log = organizer.apply(folder, plans)
+
+            safe_target = folder / "invoices" / "invoice_january_1.pdf"
+
+            self.assertTrue(existing_invoice.exists())
+            self.assertTrue(safe_target.exists())
+            self.assertEqual(existing_invoice.read_text(encoding="utf-8"), "Existing invoice")
+            self.assertEqual(safe_target.read_text(encoding="utf-8"), "New invoice")
+
+            self.assertEqual(len(operation_log.movements), 1)
+            self.assertEqual(operation_log.movements[0].target_path, safe_target)
 
 
 if __name__ == "__main__":
