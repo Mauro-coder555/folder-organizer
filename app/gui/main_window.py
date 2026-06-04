@@ -8,6 +8,8 @@ from app.models.move_plan import MovePlan
 
 from app.core.organizer import FolderOrganizer
 
+from app.core.rollback import RollbackManager
+
 
 class FolderOrganizerApp:
     def __init__(self, root: tk.Tk) -> None:
@@ -22,6 +24,7 @@ class FolderOrganizerApp:
         self.scanner = FolderScanner()
         self.planner = MovePlanner()
         self.organizer = FolderOrganizer()
+        self.rollback_manager = RollbackManager()
 
         self._configure_styles()
         self._build_layout()
@@ -229,12 +232,13 @@ class FolderOrganizerApp:
         )
         self.apply_button.pack(side="right")
 
-        undo_button = ttk.Button(
+        self.undo_button = ttk.Button(
             footer_frame,
             text="Undo last operation",
-            state="disabled",
+            command=self.undo_last_operation,
+            state="normal",
         )
-        undo_button.pack(side="right", padx=(0, 8))
+        self.undo_button.pack(side="right", padx=(0, 8))
 
         self.toggle_approval_button = ttk.Button(
             footer_frame,
@@ -379,6 +383,41 @@ class FolderOrganizerApp:
         files = self.scanner.scan(self.selected_folder)
         self.current_plans = self.planner.create_plan(self.selected_folder, files)
         self._populate_preview_table()
+
+    def undo_last_operation(self) -> None:
+        confirmed = messagebox.askyesno(
+            "Undo last operation",
+            "This will try to move files from the latest organization back to their original locations. Do you want to continue?",
+        )
+
+        if not confirmed:
+            return
+
+        try:
+            restored_count = self.rollback_manager.undo_last_operation()
+        except Exception as error:
+            messagebox.showerror("Undo error", str(error))
+            return
+
+        if restored_count == 0:
+            messagebox.showinfo(
+                "Nothing to undo",
+                "No files were restored. There may be no previous operation log, or the files may have already been moved.",
+            )
+            self.status_var.set("Nothing to undo.")
+            return
+
+        messagebox.showinfo(
+            "Undo complete",
+            f"{restored_count} files were restored successfully.",
+        )
+
+        self.status_var.set(f"Undo complete. {restored_count} files restored.")
+
+        if self.selected_folder is not None:
+            files = self.scanner.scan(self.selected_folder)
+            self.current_plans = self.planner.create_plan(self.selected_folder, files)
+            self._populate_preview_table()
 
 def run_app() -> None:
     root = tk.Tk()

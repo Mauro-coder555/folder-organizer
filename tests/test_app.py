@@ -9,6 +9,8 @@ from app.core.scanner import FolderScanner
 from app.core.organizer import FolderOrganizer
 from app.storage.log_repository import LogRepository
 
+from app.core.rollback import RollbackManager
+
 
 class TestFolderScanner(unittest.TestCase):
     def test_scan_returns_files_from_folder(self):
@@ -213,6 +215,46 @@ class TestFolderOrganizer(unittest.TestCase):
 
             self.assertEqual(len(operation_log.movements), 1)
             self.assertEqual(operation_log.movements[0].target_path, safe_target)
+
+
+class TestRollbackManager(unittest.TestCase):
+    def test_undo_last_operation_restores_moved_files(self):
+        with tempfile.TemporaryDirectory() as temporary_folder:
+            folder = Path(temporary_folder)
+            logs_folder = folder / "logs"
+
+            invoice_file = folder / "invoice_january.pdf"
+            invoice_file.write_text("Fake invoice content", encoding="utf-8")
+
+            files = FolderScanner().scan(folder)
+            plans = MovePlanner().create_plan(folder, files)
+
+            log_repository = LogRepository(logs_folder=logs_folder)
+            organizer = FolderOrganizer(log_repository=log_repository)
+            organizer.apply(folder, plans)
+
+            moved_invoice = folder / "invoices" / "invoice_january.pdf"
+
+            self.assertFalse(invoice_file.exists())
+            self.assertTrue(moved_invoice.exists())
+
+            rollback_manager = RollbackManager(log_repository=log_repository)
+            restored_count = rollback_manager.undo_last_operation()
+
+            self.assertEqual(restored_count, 1)
+            self.assertTrue(invoice_file.exists())
+            self.assertFalse(moved_invoice.exists())
+
+    def test_undo_last_operation_returns_zero_when_no_log_exists(self):
+        with tempfile.TemporaryDirectory() as temporary_folder:
+            logs_folder = Path(temporary_folder) / "logs"
+
+            log_repository = LogRepository(logs_folder=logs_folder)
+            rollback_manager = RollbackManager(log_repository=log_repository)
+
+            restored_count = rollback_manager.undo_last_operation()
+
+            self.assertEqual(restored_count, 0)
 
 
 if __name__ == "__main__":
