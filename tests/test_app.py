@@ -11,6 +11,9 @@ from app.storage.log_repository import LogRepository
 
 from app.core.rollback import RollbackManager
 
+from app.core.summary import SummaryService
+from app.storage.markdown_exporter import MarkdownExporter
+
 
 class TestFolderScanner(unittest.TestCase):
     def test_scan_returns_files_from_folder(self):
@@ -256,6 +259,37 @@ class TestRollbackManager(unittest.TestCase):
 
             self.assertEqual(restored_count, 0)
 
+    class TestSummaryService(unittest.TestCase):
+        def test_export_operation_summary_creates_markdown_file(self):
+            with tempfile.TemporaryDirectory() as temporary_folder:
+                folder = Path(temporary_folder)
+                logs_folder = folder / "logs"
+                summaries_folder = folder / "summaries"
+
+                invoice_file = folder / "invoice_january.pdf"
+                invoice_file.write_text("Fake invoice content", encoding="utf-8")
+
+                files = FolderScanner().scan(folder)
+                plans = MovePlanner().create_plan(folder, files)
+
+                log_repository = LogRepository(logs_folder=logs_folder)
+                organizer = FolderOrganizer(log_repository=log_repository)
+                operation_log = organizer.apply(folder, plans)
+
+                markdown_exporter = MarkdownExporter(summaries_folder=summaries_folder)
+                summary_service = SummaryService(markdown_exporter=markdown_exporter)
+
+                summary_path = summary_service.export_operation_summary(operation_log)
+
+                self.assertTrue(summary_path.exists())
+                self.assertEqual(summary_path.suffix, ".md")
+
+                content = summary_path.read_text(encoding="utf-8")
+
+                self.assertIn("# Folder Organization Summary", content)
+                self.assertIn("invoice_january.pdf", content)
+                self.assertIn("invoices", content)
+                self.assertIn("Files moved", content)
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ from app.core.organizer import FolderOrganizer
 
 from app.core.rollback import RollbackManager
 
+from app.core.summary import SummaryService
 
 class FolderOrganizerApp:
     def __init__(self, root: tk.Tk) -> None:
@@ -25,6 +26,7 @@ class FolderOrganizerApp:
         self.planner = MovePlanner()
         self.organizer = FolderOrganizer()
         self.rollback_manager = RollbackManager()
+        self.summary_service = SummaryService()
 
         self._configure_styles()
         self._build_layout()
@@ -370,13 +372,19 @@ class FolderOrganizerApp:
             return
 
         moved_count = len(operation_log.movements)
+        summary_path = self.summary_service.export_operation_summary(operation_log)
 
         messagebox.showinfo(
             "Organization complete",
-            f"{moved_count} files were moved successfully.",
+            (
+                f"{moved_count} files were moved successfully.\n\n"
+                f"Summary exported to:\n{summary_path}"
+            ),
         )
 
-        self.status_var.set(f"Organization complete. {moved_count} files moved.")
+        self.status_var.set(
+            f"Organization complete. {moved_count} files moved. Summary exported."
+        )
         self.apply_button.configure(state="disabled")
         self.toggle_approval_button.configure(state="disabled")
 
