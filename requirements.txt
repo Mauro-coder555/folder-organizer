@@ -1,0 +1,2 @@
+# No external dependencies required for the first version.
+# Tkinter and unittest are included with most Python installations.
